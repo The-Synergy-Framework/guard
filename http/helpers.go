@@ -1,4 +1,4 @@
-package middleware
+package http
 
 import (
 	"net/http"
@@ -32,21 +32,18 @@ func ExtractBearerToken(r *http.Request) (string, error) {
 func RequireAuthenticatedUser(service guard.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check if user is authenticated
 			userID, ok := guard.UserIDFromContext(r.Context())
 			if !ok {
 				defaultUnauthorizedHandler(w, r)
 				return
 			}
 
-			// Get full user details
 			user, err := service.(guard.UserManager).GetUser(r.Context(), userID)
 			if err != nil {
 				defaultErrorHandler(w, r, err)
 				return
 			}
 
-			// Add user to context
 			ctx := guard.WithUser(r.Context(), user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

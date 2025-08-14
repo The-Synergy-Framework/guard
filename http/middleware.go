@@ -1,6 +1,4 @@
-// Package middleware provides HTTP middleware for authentication and authorization
-// using Guard services.
-package middleware
+package http
 
 import (
 	"net/http"

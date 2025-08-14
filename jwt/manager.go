@@ -28,7 +28,6 @@ func NewManager(config Config) (*Manager, error) {
 
 	manager := &Manager{config: config}
 
-	// Parse RSA keys if using RS256
 	if config.Algorithm == RS256 {
 		privateKey, err := crypto.ParseRSAPrivateKey(config.PrivateKey)
 		if err != nil {
@@ -43,7 +42,6 @@ func NewManager(config Config) (*Manager, error) {
 			}
 			manager.publicKey = publicKey
 		} else {
-			// Use public key from private key
 			manager.publicKey = &privateKey.PublicKey
 		}
 	}
@@ -55,7 +53,6 @@ func NewManager(config Config) (*Manager, error) {
 func (m *Manager) GenerateTokens(userID string, roles, permissions []string) (*guard.TokenPair, error) {
 	now := time.Now()
 
-	// Generate access token
 	accessClaims := &guard.Claims{
 		UserID:      userID,
 		Roles:       roles,
@@ -75,7 +72,6 @@ func (m *Manager) GenerateTokens(userID string, roles, permissions []string) (*g
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
-	// Generate refresh token
 	refreshClaims := &guard.Claims{
 		UserID:    userID,
 		TokenType: "refresh",

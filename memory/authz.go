@@ -7,8 +7,6 @@ import (
 	"guard"
 )
 
-// Implement Authorizer interface
-
 // Authorize checks if a user has permission to perform an action on a resource.
 func (s *Service) Authorize(ctx context.Context, userID string, resource, action string) error {
 	permissions, err := s.GetUserPermissions(ctx, userID)
@@ -71,7 +69,6 @@ func (s *Service) GetUserRoles(ctx context.Context, userID string) ([]string, er
 		return nil, guard.ErrUserNotFound
 	}
 
-	// Return a copy to prevent external modification
 	result := make([]string, len(roles))
 	copy(result, roles)
 	return result, nil

@@ -61,27 +61,22 @@ func New(service guard.Service, config ...Config) *Interceptor {
 // UnaryAuthInterceptor returns a unary server interceptor for authentication.
 func (i *Interceptor) UnaryAuthInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Skip authentication for configured methods
 		if i.shouldSkip(info.FullMethod) {
 			return handler(ctx, req)
 		}
 
-		// Extract token from metadata
 		token, err := i.extractToken(ctx)
 		if err != nil {
 			return nil, i.config.ErrorHandler(ctx, err)
 		}
 
-		// Validate token
 		claims, err := i.service.ValidateToken(ctx, token)
 		if err != nil {
 			return nil, i.config.ErrorHandler(ctx, err)
 		}
 
-		// Add claims to context
 		ctx = guard.WithClaims(ctx, claims)
 
-		// Continue with enriched context
 		return handler(ctx, req)
 	}
 }
@@ -89,32 +84,26 @@ func (i *Interceptor) UnaryAuthInterceptor() grpc.UnaryServerInterceptor {
 // StreamAuthInterceptor returns a stream server interceptor for authentication.
 func (i *Interceptor) StreamAuthInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// Skip authentication for configured methods
 		if i.shouldSkip(info.FullMethod) {
 			return handler(srv, ss)
 		}
 
 		ctx := ss.Context()
 
-		// Extract token from metadata
 		token, err := i.extractToken(ctx)
 		if err != nil {
 			return i.config.ErrorHandler(ctx, err)
 		}
 
-		// Validate token
 		claims, err := i.service.ValidateToken(ctx, token)
 		if err != nil {
 			return i.config.ErrorHandler(ctx, err)
 		}
 
-		// Add claims to context
 		ctx = guard.WithClaims(ctx, claims)
 
-		// Create new stream with enriched context
 		wrappedStream := &contextStream{ServerStream: ss, ctx: ctx}
 
-		// Continue with enriched context
 		return handler(srv, wrappedStream)
 	}
 }
@@ -164,7 +153,6 @@ func (i *Interceptor) extractToken(ctx context.Context) (string, error) {
 		return "", ErrMissingMetadata
 	}
 
-	// Get authorization metadata (keys are always lowercase in gRPC)
 	authValues := md[i.config.MetadataKey]
 	if len(authValues) == 0 {
 		return "", ErrMissingToken
@@ -172,12 +160,10 @@ func (i *Interceptor) extractToken(ctx context.Context) (string, error) {
 
 	authValue := authValues[0]
 
-	// Check for the correct prefix (case-insensitive)
 	if !strings.HasPrefix(strings.ToLower(authValue), strings.ToLower(i.config.TokenPrefix)) {
 		return "", ErrInvalidTokenFormat
 	}
 
-	// Extract the token
 	token := strings.TrimPrefix(authValue, i.config.TokenPrefix)
 	if token == "" {
 		return "", ErrMissingToken

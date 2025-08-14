@@ -12,22 +12,16 @@ import (
 
 // Service implements all Guard interfaces using in-memory storage.
 type Service struct {
-	config Config
-
-	// JWT manager
-	jwtManager *jwt.Manager
-
-	// Token blacklist (using Synergy cache)
+	config         Config
+	jwtManager     *jwt.Manager
 	tokenBlacklist cache.Cache
-
-	// In-memory storage
-	mu           sync.RWMutex
-	users        map[string]*guard.User // userID -> User
-	usersByName  map[string]string      // username -> userID
-	usersByEmail map[string]string      // email -> userID
-	roles        map[string]*guard.Role // roleName -> Role
-	userRoles    map[string][]string    // userID -> []roleName
-	rolePerms    map[string][]string    // roleName -> []permission
+	mu             sync.RWMutex
+	users          map[string]*guard.User // userID -> User
+	usersByName    map[string]string      // username -> userID
+	usersByEmail   map[string]string      // email -> userID
+	roles          map[string]*guard.Role // roleName -> Role
+	userRoles      map[string][]string    // userID -> []roleName
+	rolePerms      map[string][]string    // roleName -> []permission
 }
 
 // NewService creates a new in-memory service with the given configuration.
@@ -36,7 +30,6 @@ func NewService(config Config) (*Service, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	// Create JWT manager
 	jwtConfig := jwt.Config{
 		SecretKey:          config.JWTSecretKey,
 		Algorithm:          config.JWTAlgorithm,
@@ -51,7 +44,6 @@ func NewService(config Config) (*Service, error) {
 		return nil, fmt.Errorf("failed to create JWT manager: %w", err)
 	}
 
-	// Create token blacklist cache
 	tokenBlacklist := cache.NewMemory(
 		cache.WithDefaultTTL(config.TokenCacheTTL),
 		cache.WithStats(),
@@ -69,7 +61,6 @@ func NewService(config Config) (*Service, error) {
 		rolePerms:      make(map[string][]string),
 	}
 
-	// Create default roles
 	service.createDefaultRoles()
 
 	return service, nil

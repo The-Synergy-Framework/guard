@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"core/chrono"
 	"errors"
 	"time"
 )
@@ -49,9 +50,9 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		Algorithm:          HS256,
-		AccessTokenExpiry:  15 * time.Minute,
-		RefreshTokenExpiry: 7 * 24 * time.Hour, // 7 days
-		ClockSkew:          5 * time.Minute,
+		AccessTokenExpiry:  chrono.FifteenMinutes,
+		RefreshTokenExpiry: chrono.Week,
+		ClockSkew:          chrono.FiveMinutes,
 	}
 }
 

@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"google.golang.org/grpc"
@@ -29,7 +30,7 @@ func DefaultStreamingAuthConfig() StreamingAuthConfig {
 		ReauthInterval:          5 * time.Minute,
 		PermissionCheckInterval: 1 * time.Minute,
 		OnAuthFailure: func(ctx context.Context, err error) {
-			// Default: log the failure (implement your logging)
+			log.Println("Authentication failed:", err)
 		},
 	}
 }
@@ -44,26 +45,21 @@ func (i *Interceptor) StreamingAuthWrapper(
 		return func(srv interface{}, stream grpc.ServerStream) error {
 			ctx := stream.Context()
 
-			// Initial authentication (already done by StreamAuthInterceptor)
 			userID, ok := guard.UserIDFromContext(ctx)
 			if !ok {
 				return status.Error(codes.Unauthenticated, "no user in context")
 			}
 
-			// Create a context that we can cancel if auth fails
 			streamCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			// Start periodic auth checking in background
 			go i.periodicAuthCheck(streamCtx, userID, resource, action, config, cancel)
 
-			// Wrap the stream with our cancellable context
 			wrappedStream := &authCheckingStream{
 				ServerStream: stream,
 				ctx:          streamCtx,
 			}
 
-			// Run the actual handler
 			return handler(srv, wrappedStream)
 		}
 	}
@@ -87,20 +83,18 @@ func (i *Interceptor) periodicAuthCheck(
 			return
 
 		case <-authTicker.C:
-			// Re-validate the user exists and is active
 			_, err := i.service.(guard.UserManager).GetUser(ctx, userID)
 			if err != nil {
 				config.OnAuthFailure(ctx, err)
-				cancel() // This will terminate the stream
+				cancel()
 				return
 			}
 
 		case <-permTicker.C:
-			// Re-check permissions
 			err := i.service.Authorize(ctx, userID, resource, action)
 			if err != nil {
 				config.OnAuthFailure(ctx, err)
-				cancel() // This will terminate the stream
+				cancel()
 				return
 			}
 		}
@@ -116,6 +110,3 @@ type authCheckingStream struct {
 func (s *authCheckingStream) Context() context.Context {
 	return s.ctx
 }
-
-// Example usage patterns are documented in the README.
-// This file provides the core streaming authentication implementation.

@@ -11,32 +11,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Implement UserManager interface
-
 // CreateUser creates a new user with the given details.
 func (s *Service) CreateUser(ctx context.Context, username, email, password string, roles []string) (*guard.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if user already exists
 	if _, exists := s.usersByName[username]; exists {
-		return nil, fmt.Errorf("%w: username '%s' already exists", ErrUserExists, username)
+		return nil, fmt.Errorf("%w: username '%s' already exists", guard.ErrUserExists, username)
 	}
 
 	if _, exists := s.usersByEmail[email]; exists {
-		return nil, fmt.Errorf("%w: email '%s' already exists", ErrUserExists, email)
+		return nil, fmt.Errorf("%w: email '%s' already exists", guard.ErrUserExists, email)
 	}
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), s.config.BCryptCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Generate user ID
 	userID := ids.MustUUID()
 
-	// Create user
 	user := &guard.User{
 		ID:       userID,
 		Username: username,
@@ -50,13 +44,11 @@ func (s *Service) CreateUser(ctx context.Context, username, email, password stri
 		UpdatedAt: time.Now(),
 	}
 
-	// Store user
 	s.users[userID] = user
 	s.usersByName[username] = userID
 	s.usersByEmail[email] = userID
 	s.userRoles[userID] = roles
 
-	// Return copy without password hash
 	result := *user
 	result.Metadata = make(map[string]string)
 	for k, v := range user.Metadata {
@@ -75,10 +67,9 @@ func (s *Service) GetUser(ctx context.Context, userID string) (*guard.User, erro
 
 	user, exists := s.users[userID]
 	if !exists {
-		return nil, ErrUserNotFound
+		return nil, guard.ErrUserNotFound
 	}
 
-	// Return a copy without password hash
 	result := *user
 	result.Metadata = make(map[string]string)
 	for k, v := range user.Metadata {
@@ -97,7 +88,7 @@ func (s *Service) GetUserByUsername(ctx context.Context, username string) (*guar
 	s.mu.RUnlock()
 
 	if !exists {
-		return nil, ErrUserNotFound
+		return nil, guard.ErrUserNotFound
 	}
 
 	return s.GetUser(ctx, userID)
@@ -110,7 +101,7 @@ func (s *Service) GetUserByEmail(ctx context.Context, email string) (*guard.User
 	s.mu.RUnlock()
 
 	if !exists {
-		return nil, ErrUserNotFound
+		return nil, guard.ErrUserNotFound
 	}
 
 	return s.GetUser(ctx, userID)
@@ -123,17 +114,14 @@ func (s *Service) UpdateUser(ctx context.Context, userID string, updates guard.U
 
 	user, exists := s.users[userID]
 	if !exists {
-		return ErrUserNotFound
+		return guard.ErrUserNotFound
 	}
 
-	// Update fields
 	if updates.Email != nil {
-		// Check if new email already exists
 		if existingUserID, exists := s.usersByEmail[*updates.Email]; exists && existingUserID != userID {
-			return fmt.Errorf("%w: email '%s' already exists", ErrUserExists, *updates.Email)
+			return fmt.Errorf("%w: email '%s' already exists", guard.ErrUserExists, *updates.Email)
 		}
 
-		// Update email mappings
 		delete(s.usersByEmail, user.Email)
 		user.Email = *updates.Email
 		s.usersByEmail[*updates.Email] = userID
@@ -176,10 +164,9 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 
 	user, exists := s.users[userID]
 	if !exists {
-		return ErrUserNotFound
+		return guard.ErrUserNotFound
 	}
 
-	// Remove from all mappings
 	delete(s.users, userID)
 	delete(s.usersByName, user.Username)
 	delete(s.usersByEmail, user.Email)
@@ -195,22 +182,19 @@ func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPa
 
 	user, exists := s.users[userID]
 	if !exists {
-		return ErrUserNotFound
+		return guard.ErrUserNotFound
 	}
 
-	// Verify old password
 	currentHash := user.Metadata["password_hash"]
 	if err := bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(oldPassword)); err != nil {
-		return ErrInvalidCredentials
+		return guard.ErrInvalidCredentials
 	}
 
-	// Hash new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), s.config.BCryptCost)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Update password
 	if user.Metadata == nil {
 		user.Metadata = make(map[string]string)
 	}

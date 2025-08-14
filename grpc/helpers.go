@@ -40,7 +40,6 @@ func ExtractBearerToken(ctx context.Context) (string, error) {
 // ChainUnaryInterceptors chains multiple unary interceptors together.
 func ChainUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Build the chain
 		chained := handler
 		for i := len(interceptors) - 1; i >= 0; i-- {
 			interceptor := interceptors[i]
@@ -57,7 +56,6 @@ func ChainUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) grpc.Un
 // ChainStreamInterceptors chains multiple stream interceptors together.
 func ChainStreamInterceptors(interceptors ...grpc.StreamServerInterceptor) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// Build the chain
 		chained := handler
 		for i := len(interceptors) - 1; i >= 0; i-- {
 			interceptor := interceptors[i]
@@ -107,7 +105,6 @@ func (i *Interceptor) UserOrAdmin() grpc.UnaryServerInterceptor {
 				return nil, status.Error(codes.Unauthenticated, "no user in context")
 			}
 
-			// Check if user has either role
 			hasUser, _ := i.service.HasRole(ctx, userID, "user")
 			hasAdmin, _ := i.service.HasRole(ctx, userID, "admin")
 

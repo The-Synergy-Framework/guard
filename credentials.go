@@ -1,9 +1,16 @@
 package guard
 
+type CredentialType string
+
+const (
+	PasswordCredentialType CredentialType = "password"
+	TokenCredentialType    CredentialType = "token"
+	APIKeyCredentialType   CredentialType = "api_key"
+)
+
 // Credentials represents authentication credentials.
 type Credentials interface {
-	// Type returns the credential type (e.g., "password", "token", "api_key")
-	Type() string
+	Type() CredentialType
 }
 
 // PasswordCredentials represents username/password authentication.
@@ -12,8 +19,8 @@ type PasswordCredentials struct {
 	Password string `json:"password" validate:"required"`
 }
 
-func (p PasswordCredentials) Type() string {
-	return "password"
+func (p PasswordCredentials) Type() CredentialType {
+	return PasswordCredentialType
 }
 
 // TokenCredentials represents token-based authentication.
@@ -21,8 +28,8 @@ type TokenCredentials struct {
 	Token string `json:"token" validate:"required"`
 }
 
-func (t TokenCredentials) Type() string {
-	return "token"
+func (t TokenCredentials) Type() CredentialType {
+	return TokenCredentialType
 }
 
 // APIKeyCredentials represents API key authentication.
@@ -30,6 +37,6 @@ type APIKeyCredentials struct {
 	APIKey string `json:"api_key" validate:"required"`
 }
 
-func (a APIKeyCredentials) Type() string {
-	return "api_key"
+func (a APIKeyCredentials) Type() CredentialType {
+	return APIKeyCredentialType
 }

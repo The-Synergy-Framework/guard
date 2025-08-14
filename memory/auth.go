@@ -13,8 +13,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Implement Authenticator interface
-
 // Authenticate validates credentials and returns user information.
 func (s *Service) Authenticate(ctx context.Context, credentials guard.Credentials) (*guard.User, error) {
 	switch creds := credentials.(type) {
@@ -29,7 +27,6 @@ func (s *Service) Authenticate(ctx context.Context, credentials guard.Credential
 
 // ValidateToken validates a token and returns the claims.
 func (s *Service) ValidateToken(ctx context.Context, token string) (*guard.Claims, error) {
-	// Check if token is blacklisted
 	if _, ok := s.tokenBlacklist.Get(token); ok {
 		return nil, errors.New("token has been revoked")
 	}
@@ -39,7 +36,6 @@ func (s *Service) ValidateToken(ctx context.Context, token string) (*guard.Claim
 		return nil, err
 	}
 
-	// Enrich context with user information
 	if claims.UserID != "" {
 		ctx = ctxpkg.WithUser(ctx, claims.UserID)
 	}
@@ -64,13 +60,11 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*guard
 		return nil, errors.New("token is not a refresh token")
 	}
 
-	// Get user to get fresh roles and permissions
 	user, err := s.GetUser(ctx, claims.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	// Generate new tokens
 	return s.GenerateTokens(ctx, user.ID)
 }
 
@@ -85,7 +79,6 @@ func (s *Service) GenerateTokens(ctx context.Context, userID string) (*guard.Tok
 		return nil, errors.New("user account is inactive")
 	}
 
-	// Get user permissions
 	permissions, err := s.GetUserPermissions(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -96,7 +89,6 @@ func (s *Service) GenerateTokens(ctx context.Context, userID string) (*guard.Tok
 
 // RevokeToken invalidates a token by adding it to the blacklist.
 func (s *Service) RevokeToken(ctx context.Context, tokenID string) error {
-	// Add token to blacklist with TTL equal to max token expiry
 	ttl := s.config.RefreshTokenExpiry
 	if s.config.AccessTokenExpiry > ttl {
 		ttl = s.config.AccessTokenExpiry
@@ -106,14 +98,11 @@ func (s *Service) RevokeToken(ctx context.Context, tokenID string) error {
 	return nil
 }
 
-// Private authentication helpers
-
 // authenticatePassword validates username/password credentials.
 func (s *Service) authenticatePassword(ctx context.Context, creds guard.PasswordCredentials) (*guard.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Find user by username or email
 	var userID string
 	var exists bool
 
@@ -132,7 +121,6 @@ func (s *Service) authenticatePassword(ctx context.Context, creds guard.Password
 		return nil, guard.ErrInvalidCredentials
 	}
 
-	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Metadata["password_hash"]), []byte(creds.Password)); err != nil {
 		return nil, guard.ErrInvalidCredentials
 	}
@@ -141,7 +129,6 @@ func (s *Service) authenticatePassword(ctx context.Context, creds guard.Password
 		return nil, errors.New("user account is inactive")
 	}
 
-	// Update last login
 	now := time.Now()
 	user.LastLoginAt = &now
 
