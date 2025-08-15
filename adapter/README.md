@@ -1,26 +1,28 @@
 # Guard Adapter Package
 
-The adapter package provides a standardized way to integrate external authentication providers with the Guard framework. It includes a base adapter implementation with common functionality like caching, retries, and metrics, which can be used to build provider-specific adapters.
+The adapter package provides a standardized way to integrate external authentication providers with the Guard framework. It includes a base adapter with caching, retries, metrics, timeouts, and context enrichment.
 
 ## Features
 
-- **Provider Interface**: A common interface that all auth providers must implement
-- **Base Adapter**: Reusable implementation with:
-  - Token, user, and permission caching
-  - Retry logic with exponential backoff and jitter
-  - Prometheus-style metrics
-  - Error handling and logging
-  - Context enrichment
-- **Configuration Options**: Flexible configuration for:
-  - Cache TTLs
-  - Retry behavior
-  - Metrics collection
-  - Error handling
-- **Example Providers**: Reference implementations for common auth providers
+- **Provider Interface**: Contract for external auth providers (`ValidateToken`, `GetUser`, `HasRole`, `Authorize`, etc.)
+- **Base Adapter**: Reusable infrastructure
+  - Token/user/permission caching (TTL + sliding options)
+  - Retries (exponential + jitter), operation timeouts
+  - Metrics (low-cardinality `error_class`), labels
+  - Context enrichment (labels) and error hooks
+- **Configurable**: Cache toggles, retry behavior, metrics, token cache key hashing
+- **Built-in Providers**: `adapter/oidc` (RS256/ES256 via discovery + JWKS)
 
 ## Usage
 
-### Creating a New Provider
+### Compose a Service with a Provider
+
+```go
+p, _ := oidc.New(nil, oidc.Config{ IssuerURL: "...", ClientID: "...", Audience: "..." })
+svc := adapter.NewService(p) // or adapter.NewService(p, adapter.WithAuthorizer(rbacAuthorizer))
+```
+
+### Implementing a Provider
 
 ```go
 import (
@@ -28,155 +30,51 @@ import (
     "core/metrics"
 )
 
-// Define provider-specific configuration
-type Config struct {
-    // Required settings
-    ServerURL    string
-    ClientID     string
-    ClientSecret string
+type Config struct { /* provider-specific */ }
 
-    // Optional settings
-    HTTPTimeout time.Duration
-    MaxRetries  int
-}
-
-// Implement the Provider interface
 type MyProvider struct {
     *adapter.BaseAdapter
     config Config
-    client *http.Client
 }
 
-// Create a new provider instance
-func New(registry metrics.Registry, config Config) (*MyProvider, error) {
-    // Validate configuration
-    if config.ServerURL == "" {
-        return nil, fmt.Errorf("server URL is required")
-    }
-
-    // Create base adapter
+func New(registry metrics.Registry, cfg Config) (*MyProvider, error) {
     base, err := adapter.NewBaseAdapter("myprovider", registry,
         adapter.WithTokenCache(5*time.Minute),
-        adapter.WithUserCache(time.Minute),
-        adapter.WithPermissionCache(30*time.Second),
         adapter.WithRetry(3, 100*time.Millisecond, 2*time.Second),
-        adapter.WithMetrics(true, metrics.Labels{
-            "env": "production",
-        }),
+        adapter.WithMetrics(true, metrics.Labels{"provider": "myprovider"}),
     )
-    if err != nil {
-        return nil, err
-    }
-
-    return &MyProvider{
-        BaseAdapter: base,
-        config:     config,
-        client:     &http.Client{},
-    }, nil
+    if err != nil { return nil, err }
+    return &MyProvider{ BaseAdapter: base, config: cfg }, nil
 }
 
-// Implement required methods using base adapter helpers
 func (p *MyProvider) ValidateToken(ctx context.Context, token string) (*guard.Claims, error) {
-    return p.BaseAdapter.ValidateTokenWithCache(ctx, token, p.doValidateToken)
-}
-
-func (p *MyProvider) doValidateToken(ctx context.Context, token string) (*guard.Claims, error) {
-    // Provider-specific token validation logic
+    return p.ValidateTokenWithCache(ctx, token, p.doValidateToken)
 }
 ```
 
-### Using a Provider
+## OIDC Provider
 
-```go
-import (
-    "guard/adapter/keycloak"
-    "core/metrics"
-)
-
-// Create metrics registry
-registry := metrics.NewRegistry()
-
-// Create provider instance
-provider, err := keycloak.New(registry, keycloak.Config{
-    ServerURL:    "https://auth.example.com",
-    Realm:        "myrealm",
-    ClientID:     "myclient",
-    ClientSecret: "mysecret",
-})
-if err != nil {
-    log.Fatal(err)
-}
-defer provider.Close()
-
-// Use the provider
-claims, err := provider.ValidateToken(ctx, "mytoken")
-if err != nil {
-    log.Printf("token validation failed: %v", err)
-    return
-}
-
-user, err := provider.GetUser(ctx, claims.UserID)
-if err != nil {
-    log.Printf("user lookup failed: %v", err)
-    return
-}
-
-if err := provider.Authorize(ctx, user.ID, "documents", "read"); err != nil {
-    log.Printf("permission denied: %v", err)
-    return
-}
-```
-
-## Available Providers
-
-- **Keycloak**: Full-featured adapter for Keycloak servers
-- More providers coming soon...
+- Generic OIDC provider with:
+  - Discovery + JWKS caching; RS256 and ES256
+  - `iss`/`aud` validation; `exp`/`nbf`/`iat` with leeway
+  - Issuer-aware claims caching
+- Map roles/permissions from claims (configurable claim names)
 
 ## Metrics
 
-The following metrics are collected when enabled:
-
-- `auth_provider_requests_total`: Total number of requests to the auth provider
-- `auth_provider_request_duration_seconds`: Duration of auth provider requests
-- `auth_provider_cache_hits_total`: Total number of cache hits
-- `auth_provider_cache_misses_total`: Total number of cache misses
-- `auth_provider_retries_total`: Total number of retried operations
-- `auth_provider_errors_total`: Total number of provider errors
-
-All metrics include the following labels:
-- `provider`: The provider name
-- Additional labels can be configured via `WithMetrics`
+- `auth_provider_requests_total`, `auth_provider_request_duration_seconds`
+- `auth_provider_cache_hits_total`, `auth_provider_cache_misses_total`
+- `auth_provider_retries_total`, `auth_provider_errors_total` (with `error_class` label)
 
 ## Error Handling
 
-The package defines common error types for provider interactions:
+Common error types:
+- `ErrProviderNotAvailable`, `ErrProviderTimeout`, `ErrProviderRateLimited`
+- `ErrProviderInvalidResponse`, `ErrProviderMisconfigured`
 
-- `ErrProviderNotAvailable`: Provider is temporarily unavailable
-- `ErrProviderTimeout`: Request timed out
-- `ErrProviderRateLimited`: Rate limit exceeded
-- `ErrProviderInvalidResponse`: Invalid or unauthorized response
-- `ErrProviderMisconfigured`: Provider configuration is invalid
+## Tips
 
-Helper functions are available to check error types:
-```go
-if adapter.IsProviderUnavailable(err) {
-    // Handle temporary unavailability
-}
-if adapter.IsProviderRateLimited(err) {
-    // Handle rate limiting
-}
-```
-
-## Contributing
-
-To add a new provider:
-
-1. Create a new package under `adapter/`
-2. Implement the `Provider` interface
-3. Use the `BaseAdapter` for common functionality
-4. Add comprehensive tests
-5. Document the provider in this README
-
-## License
-
-Same as the Guard framework. 
+- Use `adapter.WithOperationTimeout` for external calls
+- Hash token cache keys via `adapter.WithTokenCacheKeyFunc`
+- Keep retryable errors explicit via `adapter.WithRetryableErrors`
+- Provide constant metric labels (e.g., `env`, `service`) 

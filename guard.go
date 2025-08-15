@@ -90,3 +90,14 @@ type RoleManager interface {
 	// UnassignRole removes a role from a user
 	UnassignRole(ctx context.Context, userID, roleName string) error
 }
+
+// NewService composes an Authenticator and Authorizer into a guard.Service.
+// If either is nil, the returned service will panic on respective method calls.
+type composedService struct {
+	Authenticator
+	Authorizer
+}
+
+func NewService(authn Authenticator, authz Authorizer) Service {
+	return &composedService{Authenticator: authn, Authorizer: authz}
+}

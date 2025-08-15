@@ -25,34 +25,87 @@ The HTTP middleware package provides production-ready middleware that integrates
 package main
 
 import (
+    "context"
     "net/http"
-    
-    "guard/memory"
-    "guard/http"
+    "os"
+    "time"
+
+    "guard"
+    "guard/adapter"
+    "guard/adapter/oidc"
+    httpguard "guard/http"
 )
 
 func main() {
-    // Create auth service
-    authService, _ := memory.NewService(memory.DefaultConfig())
-    
-    // Create middleware
-    authMiddleware := http.New(authService)
-    
-    // Setup routes
+    // OIDC provider (Auth0/Okta/Azure/Cognito/Keycloak)
+    p, _ := oidc.New(nil, oidc.Config{
+        IssuerURL: os.Getenv("OIDC_ISSUER"),
+        ClientID:  os.Getenv("OIDC_CLIENT_ID"),
+        Audience:  os.Getenv("OIDC_AUDIENCE"),
+    },
+        adapter.WithOperationTimeout(5*time.Second),
+        adapter.WithTokenCache(5*time.Minute),
+        adapter.WithUserCache(time.Minute),
+        adapter.WithPermissionCache(30*time.Second),
+    )
+
+    // Compose service (AuthN via OIDC; token-driven AuthZ by default)
+    svc := adapter.NewService(p)
+
+    // Optional: If using RBAC, pass a custom authorizer via adapter.WithAuthorizer(...)
+    // svc := adapter.NewService(p, adapter.WithAuthorizer(rbacAuthorizer))
+
+    // HTTP middleware
+    m := httpguard.New(svc)
+
     mux := http.NewServeMux()
-    
+
     // Public route
-    mux.HandleFunc("/", homeHandler)
-    
-    // Protected routes with different permission levels
-    mux.Handle("/profile", authMiddleware.WithAuth(http.HandlerFunc(profileHandler)))
-    mux.Handle("/admin", authMiddleware.WithRole("admin", http.HandlerFunc(adminHandler)))
-    mux.Handle("/users", authMiddleware.WithPermission("users", "read", http.HandlerFunc(usersHandler)))
-    mux.Handle("/documents", authMiddleware.ReadOnlyAccess("documents")(http.HandlerFunc(documentsHandler)))
-    
+    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+    })
+
+    // Authenticated route (claims in context)
+    mux.Handle("/profile", m.WithAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        claims, _ := guard.ClaimsFromContext(r.Context())
+        _, _ = w.Write([]byte("hello " + claims.UserID))
+    })))
+
+    // Role-protected
+    mux.Handle("/admin", m.WithRole("admin", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+    })))
+
+    // Permission-protected
+    mux.Handle("/users", m.WithPermission("users", "read", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+    })))
+
     http.ListenAndServe(":8080", mux)
 }
 ```
+
+### Attaching a User without a UserManager (OIDC-only)
+
+If your handlers expect a `guard.User` in context but you do not have a `UserManager`, use:
+
+```go
+mux.Handle("/me-user", httpguard.Chain(
+    m.RequireAuth,
+    httpguard.AttachUserFromClaims, // builds guard.User from claims
+)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    user, _ := guard.UserFromContext(r.Context())
+    _, _ = w.Write([]byte(user.Username))
+})))
+```
+
+#### What is a UserManager?
+
+In Guard, a `UserManager` is an optional interface for application-managed user CRUD (create/update/delete users, change passwords, lookups). Many OIDC-based apps don’t need it because the identity provider (Auth0/Okta/Keycloak/etc.) owns user accounts and issues tokens. In that common case, you can:
+
+- Rely on JWT claims for identity, roles, and permissions
+- Use `AttachUserFromClaims` to materialize a lightweight `guard.User` in context for handlers that expect one
+- Add a `UserManager` later only if you need app-specific user profiles or admin workflows
 
 ## Core Middleware
 
@@ -231,10 +284,9 @@ config := http.Config{
     ForbiddenHandler: func(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Forbidden", 403)
     },
-    // New: Specific permission denial handler
+    // Specific permission denial handler
     PermissionDeniedHandler: func(w http.ResponseWriter, r *http.Request, resource, action string) {
-        log.Printf("Permission denied: %s:%s", resource, action)
-        http.Error(w, fmt.Sprintf("Access denied to %s:%s", resource, action), 403)
+        http.Error(w, "Access denied", 403)
     },
 }
 
@@ -275,7 +327,6 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 func documentsHandler(w http.ResponseWriter, r *http.Request) {
     // Check if user has specific permission
     if guard.HasPermissionInContext(r.Context(), "documents", "delete") {
-        // Show delete button
         w.Header().Set("X-Can-Delete", "true")
     }
     
@@ -283,11 +334,6 @@ func documentsHandler(w http.ResponseWriter, r *http.Request) {
     if permCtx, ok := guard.PermissionContextFromContext(r.Context()); ok {
         log.Printf("Permission check: %s:%s granted=%v", 
             permCtx.Resource, permCtx.Action, permCtx.Granted)
-    }
-    
-    // Use helper functions
-    if http.HasPermissionInRequest(r, "documents", "edit") {
-        // Show edit controls
     }
 }
 ```

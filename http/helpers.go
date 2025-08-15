@@ -169,3 +169,21 @@ func HasPermissionInRequest(r *http.Request, resource, action string) bool {
 func GetPermissionContext(r *http.Request) (*guard.PermissionContext, bool) {
 	return guard.PermissionContextFromContext(r.Context())
 }
+
+// AttachUserFromClaims attaches a synthetic user to context using claims only.
+// Useful in OIDC stateless setups where no UserManager is configured.
+func AttachUserFromClaims(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if claims, ok := guard.ClaimsFromContext(r.Context()); ok {
+			user := &guard.User{
+				ID:          claims.UserID,
+				Username:    claims.Username,
+				Email:       claims.Email,
+				Roles:       claims.Roles,
+				Permissions: claims.Permissions,
+			}
+			r = r.WithContext(guard.WithUser(r.Context(), user))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
