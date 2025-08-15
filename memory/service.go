@@ -1,13 +1,12 @@
 package memory
 
 import (
-	"fmt"
-	"sync"
-	"time"
-
 	"core/cache"
+	"fmt"
 	"guard"
 	"guard/jwt"
+	"sync"
+	"time"
 )
 
 // Service implements all Guard interfaces using in-memory storage.

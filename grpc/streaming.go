@@ -2,14 +2,14 @@ package grpc
 
 import (
 	"context"
+	"core/chrono"
+	"guard"
 	"log"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"guard"
 )
 
 // StreamingAuthConfig configures streaming authentication behavior.
@@ -27,8 +27,8 @@ type StreamingAuthConfig struct {
 // DefaultStreamingAuthConfig returns default streaming auth configuration.
 func DefaultStreamingAuthConfig() StreamingAuthConfig {
 	return StreamingAuthConfig{
-		ReauthInterval:          5 * time.Minute,
-		PermissionCheckInterval: 1 * time.Minute,
+		ReauthInterval:          chrono.FiveMinutes,
+		PermissionCheckInterval: chrono.Minute,
 		OnAuthFailure: func(ctx context.Context, err error) {
 			log.Println("Authentication failed:", err)
 		},
@@ -40,7 +40,6 @@ func (i *Interceptor) StreamingAuthWrapper(
 	resource, action string,
 	config StreamingAuthConfig,
 ) func(grpc.StreamHandler) grpc.StreamHandler {
-
 	return func(handler grpc.StreamHandler) grpc.StreamHandler {
 		return func(srv interface{}, stream grpc.ServerStream) error {
 			ctx := stream.Context()

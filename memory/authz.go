@@ -3,12 +3,11 @@ package memory
 import (
 	"context"
 	"fmt"
-
 	"guard"
 )
 
 // Authorize checks if a user has permission to perform an action on a resource.
-func (s *Service) Authorize(ctx context.Context, userID string, resource, action string) error {
+func (s *Service) Authorize(ctx context.Context, userID, resource, action string) error {
 	permissions, err := s.GetUserPermissions(ctx, userID)
 	if err != nil {
 		return err
@@ -25,7 +24,7 @@ func (s *Service) Authorize(ctx context.Context, userID string, resource, action
 }
 
 // HasRole checks if a user has a specific role.
-func (s *Service) HasRole(ctx context.Context, userID string, role string) (bool, error) {
+func (s *Service) HasRole(ctx context.Context, userID, role string) (bool, error) {
 	s.mu.RLock()
 	userRoles, exists := s.userRoles[userID]
 	s.mu.RUnlock()
@@ -44,7 +43,7 @@ func (s *Service) HasRole(ctx context.Context, userID string, role string) (bool
 }
 
 // HasPermission checks if a user has a specific permission.
-func (s *Service) HasPermission(ctx context.Context, userID string, permission string) (bool, error) {
+func (s *Service) HasPermission(ctx context.Context, userID, permission string) (bool, error) {
 	permissions, err := s.GetUserPermissions(ctx, userID)
 	if err != nil {
 		return false, err

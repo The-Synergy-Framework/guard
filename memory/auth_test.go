@@ -2,9 +2,8 @@ package memory
 
 import (
 	"context"
-	"testing"
-
 	"guard"
+	"testing"
 )
 
 func TestService_RefreshAndRevoke(t *testing.T) {

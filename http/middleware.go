@@ -1,10 +1,9 @@
 package http
 
 import (
+	"guard"
 	"net/http"
 	"strings"
-
-	"guard"
 )
 
 // Middleware handles HTTP authentication and authorization.

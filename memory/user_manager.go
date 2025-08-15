@@ -2,11 +2,10 @@ package memory
 
 import (
 	"context"
-	"fmt"
-	"time"
-
 	"core/ids"
+	"fmt"
 	"guard"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )

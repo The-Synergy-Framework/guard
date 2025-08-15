@@ -1,10 +1,9 @@
 package http
 
 import (
+	"guard"
 	"net/http"
 	"strings"
-
-	"guard"
 )
 
 // ExtractBearerToken extracts a Bearer token from the Authorization header.

@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"guard"
 	"strings"
 	"time"
-
-	ctxpkg "core/context"
-	"guard"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -36,15 +34,8 @@ func (s *Service) ValidateToken(ctx context.Context, token string) (*guard.Claim
 		return nil, err
 	}
 
-	if claims.UserID != "" {
-		ctx = ctxpkg.WithUser(ctx, claims.UserID)
-	}
-	if claims.SessionID != "" {
-		ctx = ctxpkg.WithSession(ctx, claims.SessionID)
-	}
-	if claims.TenantID != "" {
-		ctx = ctxpkg.WithTenant(ctx, claims.TenantID)
-	}
+	// Context enrichment is typically handled by middleware layers
+	// that can properly propagate the updated context
 
 	return claims, nil
 }

@@ -11,13 +11,19 @@ import (
 
 // A minimal PKCS1 RSA private key for tests (generated for testing only)
 const dummyRSAPrivate = `-----BEGIN RSA PRIVATE KEY-----
-MIIBOgIBAAJBAKkq3j0UQb6qU3q8zk8eFhGYEJ0Yb+U3O1mX7j0HMQqY0pQ8s7iZ
-qVQK9d8x8m7y6b7S2vH+2l4b4mV6H1K0oXECAwEAAQJATCwEo7XJb7XWZt7m9C0l
-8i1m4s8+3k6t1x5Qq3CwYQz1gW7k3v9bkYv0Qd6zBqz2q4N8pZf4lJ2XlDq9kQuk
-4QIhAPJq3d0+oM8CwNgG4C8KQK9m8o2Yt4a7dYkX8m0b6FZNAiEAu1eQy0m2+0iA
-Qy9Tz2mK8H6u3vQe5b+GmZ+qVql8gPMCIQC1uKkzVxv8kSg7mE6mO5mV4p5a9t4P
-Ih6E1nXG1+g8oQIhALl0y8m+1H3S4mDZa5uQx8hX1Yx7wQ2YwJmF3nH8e7sRAiEA
-o8s0y3mH9yH7l9C3r2Y5c3Yd2q2v6x2p4R9qXcWj1z8=
+MIICXAIBAAKBgQDAqx4hMzdzia3ZUb2hgfZb8KX4dJzvHpCPS9YS4+OYwD+U6vdT
+k5JUrHrkCcHvfQENLCp8w/S7zY+t/x28JytJisNEmX0rcbcTkwzLS1fdbRsNAXPu
+0aYTMKbKuKYumdcu10NQA1eyxgb6L/lhDj7VRhtSrKUCvSNYUqik2koLUwIDAQAB
+AoGAL3a4UHN+mJ71ThE+BxiuKU4qhP+tXZcJA9Qp47NycUIDJ9uOnG9BYEyxZZYl
+yarg5G7Z9KyNkOp+F94+ZAi+N8ytCfSWGZxEAjcR9NsfGVptsdQ8bWZGh9SAdpjJ
+eTRYyue5L/ah4HnIAHSLCdtlIagx2UDR2mSXBBmdxWI5Z5ECQQD49AvV7enUfxQR
+dZ8oPAeeqEEbLcVvB9Oywmwxnl+EHwAp4PFO4OdaHe9v55FF+zI+vTg5qtUsu1Vn
+Qx7oT09bAkEAxh84/ejvufTWyTXxVzqm/YJY8UIn4jL2bOfCzHrg1LVrWeY8ZQ7n
+BFRSbY+4Xxr6/o8v9J3gBQ379uT55wataQJAR6tiWOUUIwOukFQvTJLzkp5Xl+52
+Xz9+l4DXSvWQA+Y00tmaPp4KnGvvyWR98wqc7Wjl7dwbYLRRote05yYl7wJAMW+f
+B/R0xQDsC18TboGrI3y/9stcKlwvEzOtbtqGeW0fcVo63bifOnxT6RTAm7KeyKAw
+BijSulAn/A5csSIAaQJBAMX8JsG6HqkTPu3V+Z6mMR238bbTFrNkA6xQXpfaFFJf
+5jMgVR08ctfOs2b+cShoAauG9jMDE6f7l3lCN4HRKTA=
 -----END RSA PRIVATE KEY-----`
 
 func TestManager_HS256(t *testing.T) {
@@ -182,8 +188,8 @@ func TestManager_TokenExpiry(t *testing.T) {
 	m, err := NewManager(Config{
 		SecretKey:          "test-secret",
 		Algorithm:          HS256,
-		AccessTokenExpiry:  time.Millisecond * 10, // Very short expiry
-		RefreshTokenExpiry: time.Millisecond * 20,
+		AccessTokenExpiry:  time.Second * 1, // 1 second expiry
+		RefreshTokenExpiry: time.Second * 2,
 		Issuer:             "test-issuer",
 		Audience:           "test-aud",
 	})
@@ -203,7 +209,7 @@ func TestManager_TokenExpiry(t *testing.T) {
 	}
 
 	// Wait for token to expire
-	time.Sleep(time.Millisecond * 15)
+	time.Sleep(time.Second + time.Millisecond*100)
 
 	// Token should now be expired
 	_, err = m.ValidateToken(pair.AccessToken)

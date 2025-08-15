@@ -3,9 +3,8 @@ package memory
 import (
 	"core/chrono"
 	"errors"
-	"time"
-
 	"guard/jwt"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )

@@ -24,8 +24,8 @@ type ErrorResponse struct {
 
 // defaultErrorHandler handles authentication/authorization errors.
 func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
-	status := http.StatusUnauthorized
-	message := "Authentication failed"
+	var status int
+	var message string
 
 	// Determine appropriate status code
 	switch {
