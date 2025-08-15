@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 )
 
@@ -48,6 +49,12 @@ func defaultUnauthorizedHandler(w http.ResponseWriter, r *http.Request) {
 // defaultForbiddenHandler handles authorization failures.
 func defaultForbiddenHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSONError(w, http.StatusForbidden, "forbidden", "Insufficient permissions")
+}
+
+// defaultPermissionDeniedHandler handles specific permission denials.
+func defaultPermissionDeniedHandler(w http.ResponseWriter, r *http.Request, resource, action string) {
+	message := fmt.Sprintf("Permission denied: %s:%s", resource, action)
+	writeJSONError(w, http.StatusForbidden, "permission_denied", message)
 }
 
 // writeJSONError writes a JSON error response.

@@ -10,9 +10,18 @@ import (
 type contextKey string
 
 const (
-	userContextKey   contextKey = "guard.user"
-	claimsContextKey contextKey = "guard.claims"
+	userContextKey       contextKey = "guard.user"
+	claimsContextKey     contextKey = "guard.claims"
+	permissionContextKey contextKey = "guard.permission"
 )
+
+// PermissionContext represents permission information for a request.
+type PermissionContext struct {
+	UserID   string
+	Resource string
+	Action   string
+	Granted  bool
+}
 
 // WithUser adds a user to the context.
 func WithUser(ctx context.Context, user *User) context.Context {
@@ -74,6 +83,26 @@ func MustClaimsFromContext(ctx context.Context) *Claims {
 		panic("no claims in context")
 	}
 	return claims
+}
+
+// WithPermissionContext adds permission context to the request context.
+func WithPermissionContext(ctx context.Context, permCtx *PermissionContext) context.Context {
+	return context.WithValue(ctx, permissionContextKey, permCtx)
+}
+
+// PermissionContextFromContext extracts the permission context from the request context.
+func PermissionContextFromContext(ctx context.Context) (*PermissionContext, bool) {
+	permCtx, ok := ctx.Value(permissionContextKey).(*PermissionContext)
+	return permCtx, ok && permCtx != nil
+}
+
+// HasPermissionInContext checks if the current request has the specified permission granted.
+func HasPermissionInContext(ctx context.Context, resource, action string) bool {
+	permCtx, ok := PermissionContextFromContext(ctx)
+	if !ok {
+		return false
+	}
+	return permCtx.Resource == resource && permCtx.Action == action && permCtx.Granted
 }
 
 // UserIDFromContext extracts the user ID from context (either from Guard or Synergy context).

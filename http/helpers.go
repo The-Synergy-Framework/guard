@@ -59,6 +59,21 @@ func (m *Middleware) UserOrAdmin(next http.Handler) http.Handler {
 	return m.RequireAnyRole("user", "admin")(next)
 }
 
+// ReadOnlyAccess is a convenience function that requires read permission on a resource.
+func (m *Middleware) ReadOnlyAccess(resource string) func(http.Handler) http.Handler {
+	return m.RequirePermission(resource, "read")
+}
+
+// WriteAccess is a convenience function that requires write permission on a resource.
+func (m *Middleware) WriteAccess(resource string) func(http.Handler) http.Handler {
+	return m.RequirePermission(resource, "write")
+}
+
+// ManageAccess is a convenience function that requires manage permission on a resource.
+func (m *Middleware) ManageAccess(resource string) func(http.Handler) http.Handler {
+	return m.RequirePermission(resource, "manage")
+}
+
 // Chain combines multiple middleware functions into one.
 func Chain(middlewares ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -88,4 +103,69 @@ func (m *Middleware) WithPermission(resource, action string, handler http.Handle
 		m.RequireAuth,
 		m.RequirePermission(resource, action),
 	)(handler)
+}
+
+// WithAnyPermission is a shorthand for requiring authentication + any of the specified permissions.
+func (m *Middleware) WithAnyPermission(permissions []PermissionPair, handler http.Handler) http.Handler {
+	return Chain(
+		m.RequireAuth,
+		m.RequireAnyPermission(permissions...),
+	)(handler)
+}
+
+// WithAllPermissions is a shorthand for requiring authentication + all of the specified permissions.
+func (m *Middleware) WithAllPermissions(permissions []PermissionPair, handler http.Handler) http.Handler {
+	return Chain(
+		m.RequireAuth,
+		m.RequireAllPermissions(permissions...),
+	)(handler)
+}
+
+// WithOptionalPermissionCheck is a shorthand for optional permission checking.
+func (m *Middleware) WithOptionalPermissionCheck(resource, action string, handler http.Handler) http.Handler {
+	return Chain(
+		m.OptionalAuth,
+		m.OptionalPermissionCheck(resource, action),
+	)(handler)
+}
+
+// PermissionCheckMiddleware creates a middleware that checks if user has permission and enriches context.
+// This is useful for APIs that need to know permission status without blocking access.
+func (m *Middleware) PermissionCheckMiddleware(resource, action string) func(http.Handler) http.Handler {
+	return m.RequirePermissionWithContext(resource, action)
+}
+
+// Perm is a convenience function to create a PermissionPair.
+func Perm(resource, action string) PermissionPair {
+	return PermissionPair{Resource: resource, Action: action}
+}
+
+// CommonPermissions provides common permission pairs.
+var CommonPermissions = struct {
+	UsersRead   PermissionPair
+	UsersWrite  PermissionPair
+	UsersManage PermissionPair
+	FilesRead   PermissionPair
+	FilesWrite  PermissionPair
+	FilesDelete PermissionPair
+	AdminAll    PermissionPair
+}{
+	UsersRead:   Perm("users", "read"),
+	UsersWrite:  Perm("users", "write"),
+	UsersManage: Perm("users", "manage"),
+	FilesRead:   Perm("files", "read"),
+	FilesWrite:  Perm("files", "write"),
+	FilesDelete: Perm("files", "delete"),
+	AdminAll:    Perm("*", "*"),
+}
+
+// HasPermissionInRequest checks if the current request has a specific permission granted.
+// This is useful in handlers to check permission context set by middleware.
+func HasPermissionInRequest(r *http.Request, resource, action string) bool {
+	return guard.HasPermissionInContext(r.Context(), resource, action)
+}
+
+// GetPermissionContext extracts permission context from the request.
+func GetPermissionContext(r *http.Request) (*guard.PermissionContext, bool) {
+	return guard.PermissionContextFromContext(r.Context())
 }

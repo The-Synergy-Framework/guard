@@ -31,17 +31,21 @@ type Config struct {
 
 	// ForbiddenHandler handles authorization failures
 	ForbiddenHandler func(w http.ResponseWriter, r *http.Request)
+
+	// PermissionDeniedHandler handles specific permission denials
+	PermissionDeniedHandler func(w http.ResponseWriter, r *http.Request, resource, action string)
 }
 
 // DefaultConfig returns a default middleware configuration.
 func DefaultConfig() Config {
 	return Config{
-		TokenHeader:         "Authorization",
-		TokenPrefix:         "Bearer ",
-		SkipPaths:           []string{},
-		ErrorHandler:        defaultErrorHandler,
-		UnauthorizedHandler: defaultUnauthorizedHandler,
-		ForbiddenHandler:    defaultForbiddenHandler,
+		TokenHeader:             "Authorization",
+		TokenPrefix:             "Bearer ",
+		SkipPaths:               []string{},
+		ErrorHandler:            defaultErrorHandler,
+		UnauthorizedHandler:     defaultUnauthorizedHandler,
+		ForbiddenHandler:        defaultForbiddenHandler,
+		PermissionDeniedHandler: defaultPermissionDeniedHandler,
 	}
 }
 
@@ -130,11 +134,140 @@ func (m *Middleware) RequirePermission(resource, action string) func(http.Handle
 
 			err := m.service.Authorize(r.Context(), userID, resource, action)
 			if err != nil {
-				m.config.ForbiddenHandler(w, r)
+				// Use specific permission denied handler if available
+				if m.config.PermissionDeniedHandler != nil {
+					m.config.PermissionDeniedHandler(w, r, resource, action)
+				} else {
+					m.config.ForbiddenHandler(w, r)
+				}
 				return
 			}
 
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireAnyPermission returns middleware that requires any of the specified permissions.
+// Must be used after RequireAuth.
+func (m *Middleware) RequireAnyPermission(permissions ...PermissionPair) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := guard.UserIDFromContext(r.Context())
+			if !ok {
+				m.config.UnauthorizedHandler(w, r)
+				return
+			}
+
+			for _, perm := range permissions {
+				err := m.service.Authorize(r.Context(), userID, perm.Resource, perm.Action)
+				if err == nil {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// None of the permissions were satisfied
+			m.config.ForbiddenHandler(w, r)
+		})
+	}
+}
+
+// RequireAllPermissions returns middleware that requires all of the specified permissions.
+// Must be used after RequireAuth.
+func (m *Middleware) RequireAllPermissions(permissions ...PermissionPair) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := guard.UserIDFromContext(r.Context())
+			if !ok {
+				m.config.UnauthorizedHandler(w, r)
+				return
+			}
+
+			for _, perm := range permissions {
+				err := m.service.Authorize(r.Context(), userID, perm.Resource, perm.Action)
+				if err != nil {
+					// Use specific permission denied handler if available
+					if m.config.PermissionDeniedHandler != nil {
+						m.config.PermissionDeniedHandler(w, r, perm.Resource, perm.Action)
+					} else {
+						m.config.ForbiddenHandler(w, r)
+					}
+					return
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequirePermissionOnResource returns middleware that checks permission on a resource extracted from the request.
+// The resourceExtractor function should extract the resource ID from the request (e.g., from URL path).
+// Must be used after RequireAuth.
+func (m *Middleware) RequirePermissionOnResource(
+	action string,
+	resourceExtractor func(r *http.Request) (string, error),
+) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := guard.UserIDFromContext(r.Context())
+			if !ok {
+				m.config.UnauthorizedHandler(w, r)
+				return
+			}
+
+			resource, err := resourceExtractor(r)
+			if err != nil {
+				m.config.ErrorHandler(w, r, err)
+				return
+			}
+
+			err = m.service.Authorize(r.Context(), userID, resource, action)
+			if err != nil {
+				if m.config.PermissionDeniedHandler != nil {
+					m.config.PermissionDeniedHandler(w, r, resource, action)
+				} else {
+					m.config.ForbiddenHandler(w, r)
+				}
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequirePermissionWithContext returns middleware that checks permission and adds permission context.
+// Must be used after RequireAuth.
+func (m *Middleware) RequirePermissionWithContext(resource, action string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := guard.UserIDFromContext(r.Context())
+			if !ok {
+				m.config.UnauthorizedHandler(w, r)
+				return
+			}
+
+			err := m.service.Authorize(r.Context(), userID, resource, action)
+			if err != nil {
+				if m.config.PermissionDeniedHandler != nil {
+					m.config.PermissionDeniedHandler(w, r, resource, action)
+				} else {
+					m.config.ForbiddenHandler(w, r)
+				}
+				return
+			}
+
+			// Add permission context for later use
+			ctx := guard.WithPermissionContext(r.Context(), &guard.PermissionContext{
+				UserID:   userID,
+				Resource: resource,
+				Action:   action,
+				Granted:  true,
+			})
+
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
@@ -187,6 +320,35 @@ func (m *Middleware) OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
+// OptionalPermissionCheck returns middleware that checks permissions if user is authenticated.
+// Unlike RequirePermission, this doesn't fail if user is not authenticated or lacks permission.
+// It adds permission context indicating whether the permission was granted.
+func (m *Middleware) OptionalPermissionCheck(resource, action string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := guard.UserIDFromContext(r.Context())
+			if !ok {
+				// No user context, skip permission check
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			err := m.service.Authorize(r.Context(), userID, resource, action)
+			granted := err == nil
+
+			// Add permission context regardless of result
+			ctx := guard.WithPermissionContext(r.Context(), &guard.PermissionContext{
+				UserID:   userID,
+				Resource: resource,
+				Action:   action,
+				Granted:  granted,
+			})
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // extractToken extracts the authentication token from the request.
 func (m *Middleware) extractToken(r *http.Request) (string, error) {
 	// Get the authorization header
@@ -217,4 +379,10 @@ func (m *Middleware) shouldSkip(path string) bool {
 		}
 	}
 	return false
+}
+
+// PermissionPair represents a resource-action permission pair.
+type PermissionPair struct {
+	Resource string
+	Action   string
 }

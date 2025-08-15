@@ -5,6 +5,7 @@ import (
 	"guard"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	mem "guard/memory"
@@ -174,6 +175,212 @@ func TestMiddleware_RequirePermission(t *testing.T) {
 	}
 }
 
+func TestMiddleware_RequireAnyPermission(t *testing.T) {
+	svc := withAuthService(t)
+	m := New(svc)
+
+	admin, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "admin", Password: "adminpw"})
+	adminTokens, _ := svc.GenerateTokens(context.Background(), admin.ID)
+
+	user, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "john", Password: "pw"})
+	userTokens, _ := svc.GenerateTokens(context.Background(), user.ID)
+
+	permissions := []PermissionPair{
+		{Resource: "users", Action: "read"},
+		{Resource: "users", Action: "manage"},
+	}
+
+	handler := Chain(m.RequireAuth, m.RequireAnyPermission(permissions...))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name  string
+		token string
+		want  int
+	}{
+		{name: "admin access", token: adminTokens.AccessToken, want: http.StatusOK},
+		{name: "user denied", token: userTokens.AccessToken, want: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/users", http.NoBody)
+			req.Header.Set("Authorization", "Bearer "+tt.token)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code != tt.want {
+				t.Fatalf("status=%d want=%d", rr.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestMiddleware_RequireAllPermissions(t *testing.T) {
+	svc := withAuthService(t)
+	m := New(svc)
+
+	admin, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "admin", Password: "adminpw"})
+	adminTokens, _ := svc.GenerateTokens(context.Background(), admin.ID)
+
+	user, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "john", Password: "pw"})
+	userTokens, _ := svc.GenerateTokens(context.Background(), user.ID)
+
+	permissions := []PermissionPair{
+		{Resource: "users", Action: "read"},
+		{Resource: "users", Action: "write"},
+	}
+
+	handler := Chain(m.RequireAuth, m.RequireAllPermissions(permissions...))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name  string
+		token string
+		want  int
+	}{
+		{name: "admin access", token: adminTokens.AccessToken, want: http.StatusOK},
+		{name: "user denied", token: userTokens.AccessToken, want: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/users", http.NoBody)
+			req.Header.Set("Authorization", "Bearer "+tt.token)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code != tt.want {
+				t.Fatalf("status=%d want=%d", rr.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestMiddleware_RequirePermissionOnResource(t *testing.T) {
+	svc := withAuthService(t)
+	m := New(svc)
+
+	admin, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "admin", Password: "adminpw"})
+	adminTokens, _ := svc.GenerateTokens(context.Background(), admin.ID)
+
+	// Resource extractor that gets document ID from URL path
+	resourceExtractor := func(r *http.Request) (string, error) {
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) >= 3 {
+			return "document:" + parts[2], nil
+		}
+		return "", nil
+	}
+
+	handler := Chain(
+		m.RequireAuth,
+		m.RequirePermissionOnResource("read", resourceExtractor),
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/documents/123", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+adminTokens.AccessToken)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Admin should have access
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d want=%d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestMiddleware_RequirePermissionWithContext(t *testing.T) {
+	svc := withAuthService(t)
+	m := New(svc)
+
+	admin, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "admin", Password: "adminpw"})
+	adminTokens, _ := svc.GenerateTokens(context.Background(), admin.ID)
+
+	handler := Chain(
+		m.RequireAuth,
+		m.RequirePermissionWithContext("files", "read"),
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if permission context was added
+		permCtx, ok := guard.PermissionContextFromContext(r.Context())
+		if !ok {
+			t.Fatal("permission context not found")
+		}
+		if permCtx.Resource != "files" || permCtx.Action != "read" || !permCtx.Granted {
+			t.Fatal("incorrect permission context")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/files", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+adminTokens.AccessToken)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d want=%d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestMiddleware_OptionalPermissionCheck(t *testing.T) {
+	svc := withAuthService(t)
+	m := New(svc)
+
+	admin, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "admin", Password: "adminpw"})
+	adminTokens, _ := svc.GenerateTokens(context.Background(), admin.ID)
+
+	user, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "john", Password: "pw"})
+	userTokens, _ := svc.GenerateTokens(context.Background(), user.ID)
+
+	handler := Chain(
+		m.OptionalAuth,
+		m.OptionalPermissionCheck("files", "delete"),
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		permCtx, ok := guard.PermissionContextFromContext(r.Context())
+		if ok {
+			if permCtx.Granted {
+				w.Header().Set("X-Can-Delete", "true")
+			} else {
+				w.Header().Set("X-Can-Delete", "false")
+			}
+		} else {
+			w.Header().Set("X-Can-Delete", "unknown")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name          string
+		token         string
+		wantCanDelete string
+	}{
+		{name: "admin can delete", token: adminTokens.AccessToken, wantCanDelete: "true"},
+		{name: "user cannot delete", token: userTokens.AccessToken, wantCanDelete: "false"},
+		{name: "no auth", token: "", wantCanDelete: "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/files", http.NoBody)
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
+			}
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d want=%d", rr.Code, http.StatusOK)
+			}
+
+			canDelete := rr.Header().Get("X-Can-Delete")
+			if canDelete != tt.wantCanDelete {
+				t.Fatalf("X-Can-Delete=%s want=%s", canDelete, tt.wantCanDelete)
+			}
+		})
+	}
+}
+
 func TestMiddleware_RequireAnyRole(t *testing.T) {
 	svc := withAuthService(t)
 	m := New(svc)
@@ -266,6 +473,45 @@ func TestMiddleware_OptionalAuth(t *testing.T) {
 				t.Fatalf("authenticated=%s want=%s", auth, tt.wantAuth)
 			}
 		})
+	}
+}
+
+func TestMiddleware_CustomPermissionDeniedHandler(t *testing.T) {
+	svc := withAuthService(t)
+
+	permissionDeniedHandlerCalled := false
+	var deniedResource, deniedAction string
+
+	config := DefaultConfig()
+	config.PermissionDeniedHandler = func(w http.ResponseWriter, r *http.Request, resource, action string) {
+		permissionDeniedHandlerCalled = true
+		deniedResource = resource
+		deniedAction = action
+		w.WriteHeader(http.StatusTeapot) // Custom status for testing
+	}
+
+	m := New(svc, config)
+
+	user, _ := svc.Authenticate(context.Background(), guard.PasswordCredentials{Username: "john", Password: "pw"})
+	userTokens, _ := svc.GenerateTokens(context.Background(), user.ID)
+
+	handler := Chain(m.RequireAuth, m.RequirePermission("admin", "delete"))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/admin", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+userTokens.AccessToken)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if !permissionDeniedHandlerCalled {
+		t.Fatal("custom permission denied handler not called")
+	}
+	if rr.Code != http.StatusTeapot {
+		t.Fatalf("status=%d want=%d", rr.Code, http.StatusTeapot)
+	}
+	if deniedResource != "admin" || deniedAction != "delete" {
+		t.Fatalf("denied resource:action=%s:%s want=admin:delete", deniedResource, deniedAction)
 	}
 }
 
