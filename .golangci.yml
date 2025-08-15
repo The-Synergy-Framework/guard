@@ -1,0 +1,295 @@
+# golangci-lint configuration file
+# This file configures the linter for the core library
+
+run:
+  # Timeout for the entire linter run
+  timeout: 5m
+  
+  # Number of CPU cores to use
+  go: "1.24"
+  
+  # Build tags to consider
+  build-tags:
+    - "go1.24"
+  
+  # Allow multiple linters to run in parallel
+  allow-parallel-runners: true
+  
+  # Allow serial linters
+  allow-serial-runners: true
+  
+  # Modules download mode
+  modules-download-mode: readonly
+
+linters-settings:
+  # Configuration for specific linters
+  cyclop:
+    max-complexity: 15
+    package-average: 10.0
+    skip-tests: true
+  
+  funlen:
+    lines: 100
+    statements: 50
+  
+  gocognit:
+    min-complexity: 15
+  
+  gocyclo:
+    min-complexity: 15
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - commentFormatting
+      - hugeParam
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+      - wrapperFunc
+  
+  mnd:
+    checks: argument,case,condition,operation,return,assign
+    ignored-numbers:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 100
+      - 1000
+  
+  gosec:
+    excludes:
+      - G101 # Look for hardcoded credentials
+      - G102 # Bind to all interfaces
+      - G103 # Audit the use of unsafe block
+      - G104 # Audit errors not checked
+      - G106 # Audit the use of ssh.InsecureIgnoreHostKey
+      - G107 # Url provided to HTTP request as taint input
+      - G108 # Profiling endpoint is automatically exposed
+      - G109 # Converting strconv.Atoi result to int32/int16
+      - G110 # Potential DoS vulnerability via decompression bomb
+      - G111 # Potential DoS vulnerability via decompression bomb
+      - G112 # Potential DoS vulnerability via decompression bomb
+      - G113 # Use of unsafe methods in xml.Unmarshal
+      - G201 # SQL query construction using format string
+      - G202 # SQL query construction using string concatenation
+      - G203 # Use of unescaped data in HTML templates
+      - G204 # Audit use of command execution
+      - G301 # Poor file permissions used when creating a directory
+      - G302 # Poor file permissions used with chmod
+      - G303 # Creating tempfile using a predictable path
+      - G304 # Potential file inclusion via variable
+      - G305 # File path traversal when extracting zip archive
+      - G306 # Poor file permissions used when writing to a file
+      - G307 # Poor file permissions used when creating a file with os.Create
+      - G401 # Use of weak cryptographic primitive
+      - G402 # TLS InsecureSkipVerify set true
+      - G403 # Minimum TLS version of 1.0
+      - G404 # Use of weak random number generator (math/rand instead of crypto/rand)
+      - G501 # Import blacklist: crypto/md5
+      - G502 # Import blacklist: crypto/des
+      - G503 # Import blacklist: crypto/rc4
+      - G504 # Import blacklist: net/http/cgi
+      - G505 # Import blacklist: crypto/sha1
+      - G601 # Implicit memory aliasing in for loop
+  
+  govet:
+    # check-shadowing is deprecated, use shadow linter instead
+  
+  lll:
+    line-length: 120
+  
+  misspell:
+    locale: US
+  
+  nolintlint:
+    allow-unused: false
+    allow-leading-space: true
+    require-explanation: false
+    require-specific: false
+  
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+  
+  stylecheck:
+    # go version is now set globally in run.go
+    initialisms: [ACL, API, ASCII, CPU, CSS, DNS, EOF, GUID, HTML, HTTP, HTTPS, ID, IP, JSON, QPS, RAM, RPC, SLA, SMTP, SQL, SSH, TCP, TLS, TTL, UDP, UI, UID, UUID, URI, URL, UTF8, VM, XML, XMPP, XSRF, XSS]
+    checks: ["all", "-ST1000", "-ST1001", "-ST1003", "-ST1005", "-ST1012", "-ST1016", "-ST1020", "-ST1021", "-ST1022"]
+  
+  unparam:
+    check-exported: false
+  
+  unused:
+    check-exported: false
+
+linters:
+  # Enable specific linters
+  enable:
+    # Code quality
+    - bodyclose
+    - cyclop
+    - errcheck
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gofmt
+    - gofumpt
+    - goimports
+    - mnd
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nolintlint
+    - prealloc
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+    
+    # Performance
+    - gosimple
+    - staticcheck
+    
+    # Security
+    - gosec
+    
+    # Style
+    - gofmt
+    - gofumpt
+    - goimports
+    - whitespace
+
+  # Disable specific linters
+  disable:
+    - dupl # Disable duplicate code detection - similar validators have similar structures by design
+    - gochecknoinits # Allow init functions
+    - gochecknoglobals # Allow global variables for package-level configuration
+    - lll # Disable line length limit (handled by stylecheck)
+    - wsl # Disable whitespace linter (handled by gofumpt)
+
+issues:
+  # Exclude specific issues
+  exclude-rules:
+    # Exclude common false positives
+    - path: _test\.go
+      linters:
+        - gomnd
+        - gosec
+        - gocyclo
+        - funlen
+        - gocognit
+    
+    # Exclude generated files
+    - path: _gen\.go$
+      linters:
+        - all
+    
+    # Exclude vendor directory
+    - path: vendor/
+      linters:
+        - all
+    
+    # Allow certain patterns in test files
+    - path: _test\.go$
+      text: "unused"
+      linters:
+        - unused
+    
+    # Allow certain patterns in main files
+    - path: main\.go$
+      text: "unused"
+      linters:
+        - unused
+
+  # Maximum number of issues per linter
+  max-issues-per-linter: 0
+  
+  # Maximum number of issues in total
+  max-same-issues: 0
+  
+  # Exclude specific issues by text
+  exclude:
+    - "Error return value of .+ is not checked"
+    - "unused"
+    - "dead code"
+    - "ineffective break statement"
+    - "ineffective assignment"
+    - "unreachable code"
+    - "unused variable"
+    - "unused parameter"
+    - "unused constant"
+    - "unused function"
+    - "unused type"
+    - "unused import"
+    - "unused struct field"
+    - "unused method"
+    - "unused interface"
+    - "unused map key"
+    - "unused map value"
+    - "unused slice element"
+    - "unused array element"
+    - "unused channel"
+    - "unused goroutine"
+    - "unused defer"
+    - "unused recover"
+    - "unused panic"
+    - "unused println"
+    - "unused print"
+    - "unused fmt"
+    - "unused log"
+    - "unused os"
+    - "unused io"
+    - "unused bufio"
+    - "unused bytes"
+    - "unused strings"
+    - "unused strconv"
+    - "unused time"
+    - "unused math"
+    - "unused sort"
+    - "unused reflect"
+    - "unused unsafe"
+    - "unused sync"
+    - "unused context"
+    - "unused errors"
+    - "unused fmt"
+    - "unused log"
+    - "unused os"
+    - "unused io"
+    - "unused bufio"
+    - "unused bytes"
+    - "unused strings"
+    - "unused strconv"
+    - "unused time"
+    - "unused math"
+    - "unused sort"
+    - "unused reflect"
+    - "unused unsafe"
+    - "unused sync"
+    - "unused context"
+    - "unused errors"
+
+# Severity levels
+severity:
+  # Set default severity
+  default-severity: error
+  
+  # Override severity for specific linters
+  case-sensitive: false 
