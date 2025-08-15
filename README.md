@@ -1,4 +1,4 @@
-![](./assets/logo.png)
+![](https://github.com/The-Synergy-Framework/media-assets/blob/main/guard_logo.png)
 
 # Guard - Authentication & Authorization
 
