@@ -81,6 +81,14 @@ func (i *Interceptor) WithRole(role string) grpc.UnaryServerInterceptor {
 	)
 }
 
+// WithStreamRole is a convenience function for requiring authentication + role on streams.
+func (i *Interceptor) WithStreamRole(role string) grpc.StreamServerInterceptor {
+	return ChainStreamInterceptors(
+		i.StreamAuthInterceptor(),
+		i.StreamRoleInterceptor(role),
+	)
+}
+
 // WithPermission is a convenience function for requiring authentication + permission.
 func (i *Interceptor) WithPermission(resource, action string) grpc.UnaryServerInterceptor {
 	return ChainUnaryInterceptors(
@@ -89,9 +97,22 @@ func (i *Interceptor) WithPermission(resource, action string) grpc.UnaryServerIn
 	)
 }
 
+// WithStreamPermission is a convenience function for requiring authentication + permission on streams.
+func (i *Interceptor) WithStreamPermission(resource, action string) grpc.StreamServerInterceptor {
+	return ChainStreamInterceptors(
+		i.StreamAuthInterceptor(),
+		i.StreamPermissionInterceptor(resource, action),
+	)
+}
+
 // AdminOnly is a convenience function that requires admin role.
 func (i *Interceptor) AdminOnly() grpc.UnaryServerInterceptor {
 	return i.WithRole("admin")
+}
+
+// StreamAdminOnly is a convenience function that requires admin role on streams.
+func (i *Interceptor) StreamAdminOnly() grpc.StreamServerInterceptor {
+	return i.WithStreamRole("admin")
 }
 
 // UserOrAdmin is a convenience function that requires user or admin role.
@@ -116,6 +137,29 @@ func (i *Interceptor) UserOrAdmin() grpc.UnaryServerInterceptor {
 	)
 }
 
+// StreamUserOrAdmin is a convenience function that requires user or admin role on streams.
+func (i *Interceptor) StreamUserOrAdmin() grpc.StreamServerInterceptor {
+	return ChainStreamInterceptors(
+		i.StreamAuthInterceptor(),
+		func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			ctx := ss.Context()
+			userID, ok := guard.UserIDFromContext(ctx)
+			if !ok {
+				return status.Error(codes.Unauthenticated, "no user in context")
+			}
+
+			hasUser, _ := i.service.HasRole(ctx, userID, "user")
+			hasAdmin, _ := i.service.HasRole(ctx, userID, "admin")
+
+			if !hasUser && !hasAdmin {
+				return status.Error(codes.PermissionDenied, "insufficient role")
+			}
+
+			return handler(srv, ss)
+		},
+	)
+}
+
 // RequireAuthenticatedUser loads the full user into context.
 func RequireAuthenticatedUser(service guard.Service) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -133,5 +177,27 @@ func RequireAuthenticatedUser(service guard.Service) grpc.UnaryServerInterceptor
 		// Add user to context
 		ctx = guard.WithUser(ctx, user)
 		return handler(ctx, req)
+	}
+}
+
+// RequireAuthenticatedStreamUser loads the full user into stream context.
+func RequireAuthenticatedStreamUser(service guard.Service) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+		userID, ok := guard.UserIDFromContext(ctx)
+		if !ok {
+			return status.Error(codes.Unauthenticated, "no user in context")
+		}
+
+		// Get full user details
+		user, err := service.(guard.UserManager).GetUser(ctx, userID)
+		if err != nil {
+			return status.Error(codes.Internal, "failed to load user")
+		}
+
+		// Add user to context and wrap stream
+		ctx = guard.WithUser(ctx, user)
+		wrappedStream := &contextStream{ServerStream: ss, ctx: ctx}
+		return handler(srv, wrappedStream)
 	}
 }

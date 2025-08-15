@@ -1,11 +1,9 @@
-// Package grpc provides gRPC interceptors for authentication and authorization
-// using Guard services.
+// Package grpc provides gRPC interceptors for authentication and authorization using Guard services.
 package grpc
 
 import (
 	"context"
 	"guard"
-	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -13,7 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Interceptor handles gRPC authentication and authorization.
+// Interceptor provides gRPC interceptors for authentication and authorization.
 type Interceptor struct {
 	service guard.Service
 	config  Config
@@ -27,7 +25,7 @@ type Config struct {
 	// TokenPrefix is the prefix for token extraction (default: "bearer ")
 	TokenPrefix string
 
-	// SkipMethods are full method names to skip authentication (e.g., ["/health.Health/Check"])
+	// SkipMethods are methods to skip authentication (e.g., ["/health/Check"])
 	SkipMethods []string
 
 	// ErrorHandler handles authentication/authorization errors
@@ -44,7 +42,7 @@ func DefaultConfig() Config {
 	}
 }
 
-// New creates a new gRPC interceptor with the given service and config.
+// New creates a new interceptor instance with the given service and config.
 func New(service guard.Service, config ...Config) *Interceptor {
 	cfg := DefaultConfig()
 	if len(config) > 0 {
@@ -128,6 +126,28 @@ func (i *Interceptor) UnaryRoleInterceptor(role string) grpc.UnaryServerIntercep
 	}
 }
 
+// StreamRoleInterceptor returns a stream interceptor that requires a specific role.
+func (i *Interceptor) StreamRoleInterceptor(role string) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+		userID, ok := guard.UserIDFromContext(ctx)
+		if !ok {
+			return status.Error(codes.Unauthenticated, "no user in context")
+		}
+
+		hasRole, err := i.service.HasRole(ctx, userID, role)
+		if err != nil {
+			return i.config.ErrorHandler(ctx, err)
+		}
+
+		if !hasRole {
+			return status.Error(codes.PermissionDenied, "insufficient role")
+		}
+
+		return handler(srv, ss)
+	}
+}
+
 // UnaryPermissionInterceptor returns a unary interceptor that requires a specific permission.
 func (i *Interceptor) UnaryPermissionInterceptor(resource, action string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -138,14 +158,32 @@ func (i *Interceptor) UnaryPermissionInterceptor(resource, action string) grpc.U
 
 		err := i.service.Authorize(ctx, userID, resource, action)
 		if err != nil {
-			return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
+			return nil, status.Error(codes.PermissionDenied, "insufficient permission")
 		}
 
 		return handler(ctx, req)
 	}
 }
 
-// extractToken extracts the authentication token from gRPC metadata.
+// StreamPermissionInterceptor returns a stream interceptor that requires a specific permission.
+func (i *Interceptor) StreamPermissionInterceptor(resource, action string) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+		userID, ok := guard.UserIDFromContext(ctx)
+		if !ok {
+			return status.Error(codes.Unauthenticated, "no user in context")
+		}
+
+		err := i.service.Authorize(ctx, userID, resource, action)
+		if err != nil {
+			return status.Error(codes.PermissionDenied, "insufficient permission")
+		}
+
+		return handler(srv, ss)
+	}
+}
+
+// extractToken extracts the authentication token from the request context.
 func (i *Interceptor) extractToken(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -158,12 +196,11 @@ func (i *Interceptor) extractToken(ctx context.Context) (string, error) {
 	}
 
 	authValue := authValues[0]
-
-	if !strings.HasPrefix(strings.ToLower(authValue), strings.ToLower(i.config.TokenPrefix)) {
+	if len(authValue) < len(i.config.TokenPrefix) || authValue[:len(i.config.TokenPrefix)] != i.config.TokenPrefix {
 		return "", ErrInvalidTokenFormat
 	}
 
-	token := strings.TrimPrefix(authValue, i.config.TokenPrefix)
+	token := authValue[len(i.config.TokenPrefix):]
 	if token == "" {
 		return "", ErrMissingToken
 	}
@@ -172,9 +209,9 @@ func (i *Interceptor) extractToken(ctx context.Context) (string, error) {
 }
 
 // shouldSkip checks if the method should skip authentication.
-func (i *Interceptor) shouldSkip(fullMethod string) bool {
+func (i *Interceptor) shouldSkip(method string) bool {
 	for _, skipMethod := range i.config.SkipMethods {
-		if fullMethod == skipMethod {
+		if method == skipMethod {
 			return true
 		}
 	}
